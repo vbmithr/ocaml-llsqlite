@@ -1,0 +1,21 @@
+OASISFormat: 0.4
+Name: llsqlite
+Version: 0.1
+Synopsis: SQLite3 over RAFT + peer discovery
+Authors: Vincent Bernardoff <vb@luminar.eu.org>
+License: ISC
+Plugins: META (0.4), DevFiles (0.4)
+BuildTools: ocamlbuild
+AlphaFeatures: compiled_setup_ml
+
+Library llsqlite3
+  Path: lib
+  Modules: Llsqlite3
+  BuildDepends: lwt, llnet, oraft, lwt.syntax, sqlite3
+  CompiledObject: best
+
+Executable llsqlite
+  Path: src
+  MainIs: llsqlite.ml
+  BuildDepends: lwt, llnet, oraft, lwt.syntax, re.pcre, sqlite3
+  CompiledObject: best
