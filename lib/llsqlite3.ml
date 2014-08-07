@@ -2,20 +2,13 @@ let (>>=) = Lwt.(>>=)
 
 let section = Lwt_log.Section.make "llsqlite3"
 
+type sql = string
+
 type mutable_state = {
   initialized: bool;
 }
 
-(* The type of a distributed db *)
-type lldb = {
-  llnet: mutable_state Llnet.t;
-  db: Sqlite3.db;
-}
-
-(* Raised when SQLite returns a non-OK code *)
-exception SQLite_Error_Code of Sqlite3.Rc.t
-
-module CONF =
+module Conf =
 struct
   type op = string
   let string_of_op op = op
@@ -83,20 +76,29 @@ struct
     String.sub s (1+first_len) (len - first_len - 1) |> sockaddr_of_string
 end
 
-module SERVER = RSM.Make_server(CONF)
-module CLIENT = RSM.Make_client(CONF)
+module Client = struct
+  include RSM.Make_client(Conf)
+
+  let connect h ~addr ~port = connect h ~addr:(Conf.make_addr_inet addr port port)
+end
+
+
+module Server = struct
+  include RSM.Make_server(Conf)
 
 let run_server ~db ~addr ?join ~id () =
   let make_exec db =
     fun _ sql ->
-      let rc = Sqlite3.exec db sql in
-      match rc with
-      | Sqlite3.Rc.OK -> `Sync (`OK "" |> Lwt.return)
-      | rc -> `Sync (`Error (SQLite_Error_Code rc) |> Lwt.return)
+      try
+        let rc = Sqlite3.(exec db sql |> Rc.to_string) in
+        `Sync (`OK rc |> Lwt.return)
+      with exn ->
+        `Sync (`Error exn |> Lwt.return)
+
   in
   let exec = make_exec db in
-  lwt server = SERVER.make exec addr ?join id in
-    SERVER.run server
+  lwt server = make exec addr ?join id in
+  run server
 
 let get_peer_info sa =
   (* Found one neighbour, asking his oraft node port *)
@@ -108,10 +110,10 @@ let get_peer_info sa =
   let cluster_addr = String.sub buf 1 (nb_recv - 1) in
   Lwt.return (cluster_addr, (buf.[0] <> '\000'))
 
-let db_serve ~iface ~(addr:Unix.inet_addr) ~mcast_port ~server_port ~client_port db =
-  let oraft_addr = CONF.make_addr_inet addr server_port client_port in
+let distribute ~iface ~node_addr ~node_port ~client_port ~group_addr ~group_port ~db =
+  let oraft_addr = Conf.make_addr_inet node_addr node_port client_port in
   let oraft_addr_len = String.length oraft_addr in
-  let oraft_id = Unix.string_of_inet_addr addr ^ "/" ^ string_of_int server_port in
+  let oraft_id = Unix.string_of_inet_addr node_addr ^ "/" ^ string_of_int node_port in
   let return_oraft_addr h fd saddr =
     let buf = String.make 1 '\000' ^ oraft_addr in
     (match h.Llnet.user_data with
@@ -130,7 +132,7 @@ let db_serve ~iface ~(addr:Unix.inet_addr) ~mcast_port ~server_port ~client_port
   Llnet.connect
     ~tcp_reactor:return_oraft_addr
     ~user_data:{initialized=false}
-    ~iface (Ipaddr_unix.of_inet_addr addr) mcast_port >>= fun h ->
+    ~iface (Ipaddr_unix.of_inet_addr group_addr) group_port >>= fun h ->
   (* Waiting for other peers to manifest themselves *)
   Lwt_log.info_f ~section "I am %s, now detecting peers..."
     Llnet.(Helpers.string_of_saddr h.tcp_in_saddr)
@@ -158,7 +160,7 @@ let db_serve ~iface ~(addr:Unix.inet_addr) ~mcast_port ~server_port ~client_port
         if o = 0 then
           (
             h.user_data <- Some {initialized = true};
-            Lwt_log.ign_info ~section "Found 0 peers initialized, running standalone";
+            Lwt_log.info ~section "Found 0 peers initialized, running standalone" >>= fun () ->
             run_server ~db ~addr:oraft_addr ~id:oraft_id ()
           )
         else Lwt_unix.sleep (2. *. h.ival) >>= fun () ->
@@ -168,7 +170,7 @@ let db_serve ~iface ~(addr:Unix.inet_addr) ~mcast_port ~server_port ~client_port
         Lwt_list.iter_s (fun p ->
             try_lwt
               h.user_data <- Some {initialized = true};
-              Lwt_log.ign_info_f ~section "Connecting to %s" p;
+              Lwt_log.info_f ~section "Connecting to %s" p >>= fun () ->
               run_server ~db ~addr:oraft_addr ?join:(Some p) ~id:oraft_id ()
             with exn ->
               h.user_data <- Some {initialized = false};
@@ -180,3 +182,4 @@ let db_serve ~iface ~(addr:Unix.inet_addr) ~mcast_port ~server_port ~client_port
         try_joining_cluster ()
     in try_joining_cluster ()
 
+end
