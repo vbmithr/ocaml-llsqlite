@@ -1,5 +1,5 @@
 (* OASIS_START *)
-(* DO NOT EDIT (digest: 061b590a4752cb2d5ba43cd1ee59da2a) *)
+(* DO NOT EDIT (digest: b4bdc46929478611ce05bedbfcef0c7d) *)
 module OASISGettext = struct
 (* # 22 "src/oasis/OASISGettext.ml" *)
 
@@ -598,7 +598,7 @@ let package_default =
      MyOCamlbuildBase.lib_ocaml = [("llsqlite3", ["lib"], [])];
      lib_c = [];
      flags = [];
-     includes = []
+     includes = [("src", ["lib"])]
   }
   ;;
 

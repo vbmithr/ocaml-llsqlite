@@ -17,5 +17,5 @@ Library llsqlite3
 Executable llsqlite
   Path: src
   MainIs: llsqlite.ml
-  BuildDepends: lwt, llnet, oraft, lwt.syntax, re.pcre, sqlite3
+  BuildDepends: llsqlite3, re.pcre
   CompiledObject: best
