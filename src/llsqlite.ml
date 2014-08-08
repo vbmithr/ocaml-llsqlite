@@ -7,7 +7,7 @@ let clientaddr = Re_pcre.regexp "(.*)/(.*)"
 let client_op ~addr ~port op =
   let open Llsqlite3.Client in
   let c = make ~id:(string_of_int (Unix.getpid ())) () in
-  connect c ~addr ~port >>
+  Lwt_unix.handle_unix_error (fun () -> connect c ~addr ~port) ()  >>
     match_lwt execute c op with
     | `OK s -> printf "+OK %s\n" s; return ()
     | `Error s -> printf "-ERR %s\n" s; return ()
@@ -24,8 +24,8 @@ let specs =
       "<addr>/<port> Client mode";
       "-sql", Arg.String (fun s -> sql := Some s),
       "STRING Execute the given SQL statement";
-      "-v", Arg.Unit (fun () -> Lwt_log.(add_rule "llsqlite3" Info)), " Be verbose";
-      "-vv", Arg.Unit (fun () -> Lwt_log.(add_rule "llsqlite3" Debug)), " Be more verbose"
+      "-v", Arg.String (fun s -> Lwt_log.(add_rule s Info)), " Be verbose";
+      "-vv", Arg.String (fun s -> Lwt_log.(add_rule s Debug)), " Be more verbose"
     ]
 
 let usage () =
@@ -33,7 +33,7 @@ let usage () =
   exit 1
 
 let set_template () =
-  let template = "$(date).$(milliseconds) [$(pid)]: $(message)" in
+  let template = "$(date).$(milliseconds) ($(pid)|$(section)|$(level)) $(message)" in
   let std_logger =
     Lwt_log.channel ~template ~close_mode:`Keep ~channel:Lwt_io.stdout () in
   Lwt_log.default := std_logger
@@ -47,7 +47,6 @@ let () =
   match !mode with
   | `Help -> usage ()
   | `Master addr ->
-    printf "Launching server %d\n%!" (Unix.getpid ());
     (
       match Re.(exec masteraddr addr |> get_all) with
       | [|_; node_addr; node_port; group_addr; group_port; iface|] ->
@@ -61,7 +60,6 @@ let () =
       | _ -> usage ()
     )
     | `Client addr ->
-      printf "Launching client %d\n%!" (Unix.getpid ());
       (
         match Re.(exec clientaddr addr |> get_all), !sql with
         | [|_; addr; port;|], Some sql ->
