@@ -17,5 +17,5 @@ Library llsqlite3
 Executable llsqlite
   Path: src
   MainIs: llsqlite.ml
-  BuildDepends: llsqlite3, re.pcre
+  BuildDepends: llsqlite3, re.pcre, batteries
   CompiledObject: best

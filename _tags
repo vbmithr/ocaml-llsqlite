@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: c785e09fdddcb1428fe06369c5f27dbb)
+# DO NOT EDIT (digest: 99946dcfca59e1c010155a87eb852fa9)
 # Ignore VCS directories, you can use the same kind of rule outside
 # OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
@@ -21,6 +21,7 @@
 <lib/*.ml{,i}>: pkg_oraft
 <lib/*.ml{,i}>: pkg_sqlite3
 # Executable llsqlite
+<src/llsqlite.{native,byte}>: pkg_batteries
 <src/llsqlite.{native,byte}>: pkg_llnet
 <src/llsqlite.{native,byte}>: pkg_lwt
 <src/llsqlite.{native,byte}>: pkg_lwt.syntax
@@ -28,6 +29,7 @@
 <src/llsqlite.{native,byte}>: pkg_re.pcre
 <src/llsqlite.{native,byte}>: pkg_sqlite3
 <src/llsqlite.{native,byte}>: use_llsqlite3
+<src/*.ml{,i}>: pkg_batteries
 <src/*.ml{,i}>: pkg_llnet
 <src/*.ml{,i}>: pkg_lwt
 <src/*.ml{,i}>: pkg_lwt.syntax
