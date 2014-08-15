@@ -1,6 +1,7 @@
 open Batteries
 open Lwt
 
+let section = Lwt_log.Section.make "llsqlite"
 
 let masteraddr = Re_pcre.regexp "(.*)/(.*)/(.*)/(.*)/(.*)"
 let clientaddr = Re_pcre.regexp "(.*)/(.*)"
@@ -43,15 +44,6 @@ let set_template () =
 
 let () = set_template ()
 
-
-let urandom buf off len =
-  let ic = open_in "/dev/urandom" in
-  try
-    let nb_read = input ic buf off len in
-    close_in ic; nb_read
-  with exn ->
-    close_in ic; raise exn
-
 let () =
   ignore (Sys.set_signal Sys.sigpipe Sys.Signal_ignore);
   Arg.parse specs ignore "Usage:";
@@ -70,8 +62,6 @@ let () =
         (* init TLS stuff *)
         let privkey = File.with_file_in "certs/server.key" IO.read_all in
         let cert = File.with_file_in "certs/server.crt" IO.read_all in
-        let entropy = File.with_file_in "/dev/urandom" (fun ic -> IO.nread ic 2048) in
-        Nocrypto.Rng.reseed (entropy |> Cstruct.of_string);
         let privkey = Cstruct.of_string privkey in
         let privkey = X509.PK.of_pem_cstruct1 privkey in
         let cert = Cstruct.of_string cert in
@@ -82,8 +72,12 @@ let () =
           else None, None in
 
         (* starting server *)
-        Llsqlite3.Server.distribute ?tls ?client_tls ~node_addr ~node_port
-          ~client_port:(node_port + 1) ~group_addr ~group_port ~iface db |> Lwt_main.run
+        Lwt_main.run
+          (
+            Tls_lwt.rng_init () >>
+            Llsqlite3.Server.distribute ?tls ?client_tls ~node_addr ~node_port
+              ~client_port:(node_port + 1) ~group_addr ~group_port ~iface db
+          )
       | _ -> usage ()
     )
     | `Client addr ->
