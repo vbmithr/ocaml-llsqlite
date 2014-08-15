@@ -44,6 +44,17 @@ let set_template () =
 
 let () = set_template ()
 
+let x509_cert = "certs/server.crt"
+let x509_pk   = "certs/server.key"
+
+let tls_create = function
+  | false -> return (None, None)
+  | true  ->
+      lwt () = Tls_lwt.rng_init () in
+      lwt certificate =
+        X509_lwt.private_of_pems ~cert:x509_cert ~priv_key:x509_pk in
+      return Tls.Config.(Some (server ~certificate ()), Some (client ()))
+
 let () =
   ignore (Sys.set_signal Sys.sigpipe Sys.Signal_ignore);
   Arg.parse specs ignore "Usage:";
@@ -59,22 +70,10 @@ let () =
         let group_port = int_of_string group_port in
         let db = Sqlite3.db_open ("/tmp/llsqlite." ^ (string_of_int (Unix.getpid ()))) in
 
-        (* init TLS stuff *)
-        let privkey = File.with_file_in "certs/server.key" IO.read_all in
-        let cert = File.with_file_in "certs/server.crt" IO.read_all in
-        let privkey = Cstruct.of_string privkey in
-        let privkey = X509.PK.of_pem_cstruct1 privkey in
-        let cert = Cstruct.of_string cert in
-        let cert = X509.Cert.of_pem_cstruct cert in
-        let certificate = cert, privkey in
-        let tls, client_tls = if !tls
-          then  Some (Tls.Config.server ~certificate ()), Some (Tls.Config.client ())
-          else None, None in
-
         (* starting server *)
         Lwt_main.run
           (
-            Tls_lwt.rng_init () >>
+            lwt (tls, client_tls) = tls_create !tls in
             Llsqlite3.Server.distribute ?tls ?client_tls ~node_addr ~node_port
               ~client_port:(node_port + 1) ~group_addr ~group_port ~iface db
           )
