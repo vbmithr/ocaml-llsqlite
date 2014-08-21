@@ -1,8 +1,8 @@
 # OASIS_START
-# DO NOT EDIT (digest: 1a06e68d3d53e302f07670bd14f2e8e6)
+# DO NOT EDIT (digest: 991eebb5789623490acfd5767ecf9b50)
 version = "0.1"
 description = "SQLite3 over RAFT + peer discovery"
-requires = "lwt llnet oraft lwt.syntax sqlite3"
+requires = "lwt llnet oraft lwt.syntax sqlite3 ipaddr.unix"
 archive(byte) = "llsqlite3.cma"
 archive(byte, plugin) = "llsqlite3.cma"
 archive(native) = "llsqlite3.cmxa"

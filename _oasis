@@ -11,7 +11,7 @@ AlphaFeatures: compiled_setup_ml
 Library llsqlite3
   Path: lib
   Modules: Llsqlite3
-  BuildDepends: lwt, llnet, oraft, lwt.syntax, sqlite3
+  BuildDepends: lwt, llnet, oraft, lwt.syntax, sqlite3, ipaddr.unix
   CompiledObject: best
 
 Executable llsqlite
