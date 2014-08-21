@@ -13,9 +13,9 @@ then
     exit 1
 else
     trap control_c SIGINT
-    ./llsqlite.native -tls -server ::/${2}/ff02::dead:beaf/${3}/${1} -vv RSM -vv oraft_lwt -vv llsqlite3 -vv llsqlite &
-    ./llsqlite.native -tls -server ::/$(($2 + 2))/ff02::dead:beaf/${3}/${1} -vv RSM -vv oraft_lwt -vv llsqlite3 -vv llsqlite &
-    # ./llsqlite.native -tls -server ::/$(($2 + 4))/ff02::dead:beaf/${3}/${1} -vv llsqlite3 &
+    ./llsqlite.native -tls -server ::/${2}/ff02::dead:beaf/${3}/${1} -vv llsqlite3 -vv llsqlite "0" "llsqlite.db" &
+    ./llsqlite.native -tls -server ::/$(($2 + 2))/ff02::dead:beaf/${3}/${1} -vv llsqlite3 -vv llsqlite "1" "llsqlite.db2" &
+    ./llsqlite.native -tls -server ::/$(($2 + 4))/ff02::dead:beaf/${3}/${1} -vv llsqlite3 -vv llsqlite "2" "llsqlite.db3" &
     # ./llsqlite.native -tls -server ::/$(($2 + 6))/ff02::dead:beaf/${3}/${1} -vv llsqlite3 &
     # ./llsqlite.native -tls -server ::/$(($2 + 8))/ff02::dead:beaf/${3}/${1} -vv llsqlite3 &
     # ./llsqlite.native -tls -server ::/$(($2 + 10))/ff02::dead:beaf/${3}/${1} -vv llsqlite3 &
@@ -23,7 +23,7 @@ else
     RC=1
     while [[ $RC -ne 0 ]]; do
     	printf "Trying to create table STORE\n"
-    	./llsqlite.native -tls -client ::1/10000 -sql "CREATE TABLE STORE (KEY STRING, VALUE STRING)"
+	./llsqlite.native -tls -client ::1/10000 "CREATE TABLE STORE (KEY STRING, VALUE STRING)"
     	RC=$?
     	sleep 1
     done
@@ -33,7 +33,7 @@ else
     	RC=1
     	while [[ $RC -ne 0 ]]; do
     	    printf "Trying to insert $K -> $V into the DB\n"
-    	    ./llsqlite.native -tls -client ::1/10000 -sql "INSERT INTO STORE (KEY, VALUE) VALUES (\"`pwgen -1`\", \"`pwgen -1`\")"
+	    ./llsqlite.native -tls -client ::1/10000 "INSERT INTO STORE (KEY, VALUE) VALUES (\"`pwgen -1`\", \"`pwgen -1`\")"
     	    RC=$?
     	    sleep 1
     	done

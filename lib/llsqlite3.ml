@@ -55,7 +55,6 @@ struct
     | _ -> failwith "make_addr_unix"
 
   let address_of_saddrs sa1 sa2 =
-    let open Unix in
     let sa1 = bytes_of_sockaddr sa1 in
     let sa2 = bytes_of_sockaddr sa2 in
     String.(make 1 (Char.chr (length sa1))) ^ sa1 ^ sa2
@@ -126,7 +125,7 @@ end
 module Client = struct
   include RSM.Make_client(Conf)
 
-  let connect ?tls h ~addr ~port = connect ?tls h ~addr:(Conf.make_addr_inet addr port port)
+  let connect h ~addr ~port = connect h ~addr:(Conf.make_addr_inet addr port port)
 end
 
 
@@ -163,17 +162,19 @@ let get_peer_info sa =
 let distribute
     ?tls
     ?client_tls
-    ~iface ~node_addr ~node_port ~client_port ~group_addr ~group_port
+    ~id ~iface
+    ~node_saddr
+    ~client_saddr
+    ~group_saddr
     db =
-  let oraft_addr = Conf.make_addr_inet node_addr node_port client_port in
-  let oraft_id = Unix.string_of_inet_addr node_addr ^ "/" ^ string_of_int node_port in
-  let oraft_addr_len = String.length oraft_addr in
+
+  let node_port = Llnet.Helpers.port_of_saddr node_saddr in
 
   let return_oraft_addr h fd saddr =
     let open Llnet in
-    let sa1 = Helpers.saddr_with_port h.tcp_in_saddr node_port in
-    let sa2 = Helpers.saddr_with_port h.tcp_in_saddr client_port in
-    let oraft_addr = Conf.address_of_saddrs sa1 sa2 in
+    let node_saddr = Helpers.(saddr_with_port h.tcp_in_saddr node_port) in
+    let oraft_addr = Conf.address_of_saddrs node_saddr client_saddr in
+    let oraft_addr_len = String.length oraft_addr in
     let buf = String.make 1 '\000' ^ oraft_addr in
     (match h.Llnet.user_data with
      | None -> Lwt.fail (Failure "return_oraft_addr")
@@ -192,7 +193,13 @@ let distribute
   Llnet.connect
     ~tcp_reactor:return_oraft_addr
     ~user_data:{initialized=false}
-    ~iface (Ipaddr_unix.of_inet_addr group_addr) group_port >>= fun h ->
+    ~iface
+    group_saddr >>= fun h ->
+
+  let node_saddr = Helpers.(saddr_with_port h.tcp_in_saddr
+                              (port_of_saddr node_saddr)) in
+  let oraft_addr = Conf.address_of_saddrs node_saddr client_saddr in
+
   (* Waiting for other peers to manifest themselves *)
   Lwt_log.info_f ~section "%s (ORaft: %d) starting"
     Llnet.(Helpers.string_of_saddr h.tcp_in_saddr) node_port
@@ -206,7 +213,7 @@ let distribute
   | 0, _, _ ->
     (* We are alone, run server without joining a cluster *)
     h.user_data <- Some {initialized = true};
-    run_server ?tls ?client_tls ~db ~addr:oraft_addr ~id:oraft_id ()
+    run_server ?tls ?client_tls ~db ~addr:oraft_addr ~id ()
   | _, o, ns ->
     let rec try_joining_cluster () =
       Lwt_list.map_p (fun n -> get_peer_info n) ns >>= fun p_infos ->
@@ -222,7 +229,7 @@ let distribute
             h.user_data <- Some {initialized = true};
             Lwt_log.info ~section
               "Found 0 peers initialized, running standalone" >>= fun () ->
-            run_server ?tls ?client_tls ~db ~addr:oraft_addr ~id:oraft_id ()
+            run_server ?tls ?client_tls ~db ~addr:oraft_addr ~id ()
           )
         else Lwt_unix.sleep (2. *. h.ival) >>= fun () ->
           try_joining_cluster ()
@@ -235,9 +242,8 @@ let distribute
               h.user_data <- Some {initialized = true};
               Lwt_log.info_f ~section "Connecting to (%d/%d) %s"
                (i+1) nb_peers oaddr_str >>= fun () ->
-              run_server ?tls ?client_tls ~db ~addr:oraft_addr
-                ?join:(Some oaddr)
-                ~id:oraft_id ()
+              run_server ?tls ?client_tls
+                ~db ~addr:oraft_addr ?join:(Some oaddr) ~id ()
             with exn ->
               h.user_data <- Some {initialized = false};
               Lwt_log.warning_f ~exn ~section
