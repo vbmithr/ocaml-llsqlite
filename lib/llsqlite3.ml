@@ -132,7 +132,7 @@ end
 module Server = struct
   include RSM.Make_server(Conf)
 
-let run_server ?tls ?client_tls ~db ~addr ?join ~id () =
+let run_server ?conn_wrapper ?client_tls ~db ~addr ?join ~id () =
   let make_exec db =
     fun _ sql ->
       try
@@ -143,7 +143,7 @@ let run_server ?tls ?client_tls ~db ~addr ?join ~id () =
 
   in
   let exec = make_exec db in
-  lwt server = make ?tls ?client_tls exec addr ?join id in
+  lwt server = make ?conn_wrapper exec addr ?join id in
   run server
 
 let get_peer_info sa =
@@ -160,8 +160,7 @@ let get_peer_info sa =
   Lwt.return (oraft_addr, peer_initialized)
 
 let distribute
-    ?tls
-    ?client_tls
+    ?conn_wrapper
     ~id ~iface
     ~node_saddr
     ~client_saddr
@@ -213,7 +212,7 @@ let distribute
   | 0, _, _ ->
     (* We are alone, run server without joining a cluster *)
     h.user_data <- Some {initialized = true};
-    run_server ?tls ?client_tls ~db ~addr:oraft_addr ~id ()
+    run_server ?conn_wrapper ~db ~addr:oraft_addr ~id ()
   | _, o, ns ->
     let rec try_joining_cluster () =
       Lwt_list.map_p (fun n -> get_peer_info n) ns >>= fun p_infos ->
@@ -229,7 +228,7 @@ let distribute
             h.user_data <- Some {initialized = true};
             Lwt_log.info ~section
               "Found 0 peers initialized, running standalone" >>= fun () ->
-            run_server ?tls ?client_tls ~db ~addr:oraft_addr ~id ()
+            run_server ?conn_wrapper ~db ~addr:oraft_addr ~id ()
           )
         else Lwt_unix.sleep (2. *. h.ival) >>= fun () ->
           try_joining_cluster ()
@@ -242,8 +241,7 @@ let distribute
               h.user_data <- Some {initialized = true};
               Lwt_log.info_f ~section "Connecting to (%d/%d) %s"
                (i+1) nb_peers oaddr_str >>= fun () ->
-              run_server ?tls ?client_tls
-                ~db ~addr:oraft_addr ?join:(Some oaddr) ~id ()
+              run_server ?conn_wrapper ~db ~addr:oraft_addr ?join:(Some oaddr) ~id ()
             with exn ->
               h.user_data <- Some {initialized = false};
               Lwt_log.warning_f ~exn ~section

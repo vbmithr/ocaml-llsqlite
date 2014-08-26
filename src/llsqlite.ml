@@ -6,9 +6,9 @@ let section = Lwt_log.Section.make "llsqlite"
 let masteraddr = Re_pcre.regexp "(.*)/(.*)/(.*)/(.*)/(.*)"
 let clientaddr = Re_pcre.regexp "(.*)/(.*)"
 
-let client_ops ?tls ~addr ~port ops =
+let client_ops ?conn_wrapper ~addr ~port ops =
   let open Llsqlite3.Client in
-  let c = make ?tls ~id:(string_of_int (Unix.getpid ())) () in
+  let c = make ?conn_wrapper ~id:(string_of_int (Unix.getpid ())) () in
   Lwt_unix.handle_unix_error (fun () -> connect c ~addr ~port) ()  >>
   Lwt_list.iter_s (fun op ->
       match_lwt execute c op with
@@ -49,13 +49,15 @@ let x509_cert = "certs/server.crt"
 let x509_pk   = "certs/server.key"
 
 let tls_create = function
-  | false -> return (None, None)
+  | false -> return None
   | true  ->
       lwt () = Tls_lwt.rng_init () in
       lwt certificate =
         X509_lwt.private_of_pems ~cert:x509_cert ~priv_key:x509_pk in
-      return Tls.Config.(Some (server ~certificate ()),
-                         Some (client ()))
+      Some (Tls.Config.(Oraft_lwt_tls.make_conn_wrapper
+                          ~server_config:(server ~certificate ())
+                          ~client_config:(client ()) ()))
+      |> return
 
 let () =
   ignore (Sys.set_signal Sys.sigpipe Sys.Signal_ignore);
@@ -70,14 +72,14 @@ let () =
         let node_saddr = Unix.(ADDR_INET (inet_addr_of_string addr,
                                           int_of_string node_port)) in
         let client_saddr = Unix.(ADDR_INET (inet_addr_of_string addr,
-                                          int_of_string node_port + 1)) in
+                                            int_of_string node_port + 1)) in
         let group_saddr = Unix.(ADDR_INET (inet_addr_of_string group_addr,
                                            int_of_string group_port)) in
 
         (* starting server *)
         Lwt_main.run
           (
-            lwt (tls, client_tls) = tls_create !tls in
+            lwt conn_wrapper = tls_create !tls in
             match !anon_args with
             | [id; db] ->
               let set_template () =
@@ -90,24 +92,28 @@ let () =
                 Lwt.return_unit in
               lwt () = set_template () in
               let db = Sqlite3.db_open db in
-              Llsqlite3.Server.distribute ?tls ?client_tls ~id ~iface
+              Llsqlite3.Server.distribute ?conn_wrapper ~id ~iface
                 ~node_saddr ~client_saddr ~group_saddr db
             | _ ->
               usage ()
           )
       | _ -> usage ()
     )
-    | `Client addr ->
-      (
-        match Re.(exec clientaddr addr |> get_all) with
-        | [|_; addr; port;|] ->
-          let addr = Unix.inet_addr_of_string addr in
-          let port = int_of_string port + 1 in
-          if !tls then
-            Tls_lwt.rng_init () >>
-            client_ops ~tls:(Tls.Config.client ()) ~addr ~port !anon_args |> Lwt_main.run
-          else
-            client_ops ~addr ~port !anon_args |> Lwt_main.run
-        | _ -> usage ()
-      )
+  | `Client addr ->
+    (
+      match Re.(exec clientaddr addr |> get_all) with
+      | [|_; addr; port;|] ->
+        let addr = Unix.inet_addr_of_string addr in
+        let port = int_of_string port + 1 in
+        if !tls then
+          Lwt_main.run
+            (
+              Tls_lwt.rng_init () >>
+              lwt conn_wrapper = tls_create !tls in
+              client_ops ?conn_wrapper ~addr ~port !anon_args
+            )
+        else
+          client_ops ~addr ~port !anon_args |> Lwt_main.run
+      | _ -> usage ()
+    )
 
