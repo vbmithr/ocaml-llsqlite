@@ -48,17 +48,6 @@ let usage () =
 let x509_cert = "certs/server.crt"
 let x509_pk   = "certs/server.key"
 
-let tls_create = function
-  | false -> return None
-  | true  ->
-      lwt () = Tls_lwt.rng_init () in
-      lwt certificate =
-        X509_lwt.private_of_pems ~cert:x509_cert ~priv_key:x509_pk in
-      Some (Tls.Config.(Oraft_lwt_tls.make_conn_wrapper
-                          ~server_config:(server ~certificate ())
-                          ~client_config:(client ()) ()))
-      |> return
-
 let () =
   ignore (Sys.set_signal Sys.sigpipe Sys.Signal_ignore);
   Arg.parse specs (fun a -> anon_args := a::!anon_args) usage_msg;
@@ -79,7 +68,15 @@ let () =
         (* starting server *)
         Lwt_main.run
           (
-            lwt conn_wrapper = tls_create !tls in
+            lwt conn_wrapper = if !tls then
+                lwt () = Tls_lwt.rng_init () in
+                lwt certificate =
+                  X509_lwt.private_of_pems ~cert:x509_cert ~priv_key:x509_pk in
+                Some (Tls.Config.(Oraft_lwt_tls.make_server_wrapper
+                                    ~server_config:(server ~certificate ())
+                                    ~client_config:(client ()) ())) |> return
+              else return None
+            in
             match !anon_args with
             | [id; db] ->
               let set_template () =
@@ -105,15 +102,16 @@ let () =
       | [|_; addr; port;|] ->
         let addr = Unix.inet_addr_of_string addr in
         let port = int_of_string port + 1 in
-        if !tls then
           Lwt_main.run
             (
-              Tls_lwt.rng_init () >>
-              lwt conn_wrapper = tls_create !tls in
-              client_ops ?conn_wrapper ~addr ~port !anon_args
+              if !tls then
+                lwt () = Tls_lwt.rng_init () in
+                let client_config = Tls.Config.client () in
+                let conn_wrapper = Oraft_lwt_tls.make_client_wrapper ~client_config () in
+                client_ops ~conn_wrapper ~addr ~port !anon_args
+              else
+                client_ops ~addr ~port !anon_args
             )
-        else
-          client_ops ~addr ~port !anon_args |> Lwt_main.run
       | _ -> usage ()
     )
 

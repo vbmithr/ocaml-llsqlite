@@ -3,7 +3,7 @@ type sql = string
 
 module Client : sig
   type t
-  val make : ?conn_wrapper:Oraft_lwt.conn_wrapper -> id:string -> unit -> t
+  val make : ?conn_wrapper:[`Outgoing] Oraft_lwt.conn_wrapper -> id:string -> unit -> t
   val connect : t -> addr:Unix.inet_addr -> port:int -> unit Lwt.t
   val execute : t -> sql -> [ `Error of string | `OK of string ] Lwt.t
   val execute_ro : t -> sql -> [ `Error of string | `OK of string ] Lwt.t
@@ -11,7 +11,7 @@ end
 
 module Server : sig
   val distribute :
-    ?conn_wrapper:Oraft_lwt.conn_wrapper ->
+    ?conn_wrapper:[`Outgoing | `Incoming] Oraft_lwt.conn_wrapper ->
     id:string ->
     iface:string ->
     node_saddr:Unix.sockaddr ->
