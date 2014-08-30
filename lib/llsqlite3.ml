@@ -125,7 +125,9 @@ end
 module Client = struct
   include RSM.Make_client(Conf)
 
-  let connect h ~addr ~port = connect h ~addr:(Conf.make_addr_inet addr port port)
+  let connect h = function
+    | Unix.ADDR_INET (a, p) -> connect h ~addr:(Conf.make_addr_inet a p p)
+    | Unix.ADDR_UNIX a -> raise_lwt (Invalid_argument "not supported")
 end
 
 
