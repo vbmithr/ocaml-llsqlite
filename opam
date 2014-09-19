@@ -8,9 +8,6 @@ bug-reports: "http://github.com/vbmithr/ocaml-llsqlite/issues"
 dev-repo: "git://github.com/vbmithr/ocaml-llsqlite"
 license: "ISC"
 build: [
-  ["./configure" "--prefix %{prefix}%"]
   [make]
 ]
-install: [make "install"]
-remove: ["ocamlfind" "remove" "llsqlite"]
 depends: ["ocamlfind" {build} "lwt" "oraft" "sqlite3-ocaml" "ipaddr" "re" "batteries"]

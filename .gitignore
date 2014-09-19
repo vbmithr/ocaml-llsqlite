@@ -5,3 +5,4 @@ setup.exe
 *.native
 *.build
 *.log
+*.install
