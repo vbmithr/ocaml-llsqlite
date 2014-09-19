@@ -1,0 +1,14 @@
+PRJ llsqlite
+S lib
+S src
+S test
+B _build/lib
+B _build/src
+B _build/test
+PKG lwt
+PKG llnet
+PKG oraft
+PKG sqlite3
+PKG ipaddr.unix
+PKG re.pcre
+PKG batteries
