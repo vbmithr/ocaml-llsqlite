@@ -6,10 +6,10 @@ let section = Lwt_log.Section.make "llsqlite"
 let masteraddr = Re_pcre.regexp "(.*)/(.*)/(.*)/(.*)/(.*)"
 let clientaddr = Re_pcre.regexp "(.*)/(.*)"
 
-let client_ops ?conn_wrapper ~addr ~port ops =
+let client_ops ?conn_wrapper saddr ops =
   let open Llsqlite3.Client in
   let c = make ?conn_wrapper ~id:(string_of_int (Unix.getpid ())) () in
-  Lwt_unix.handle_unix_error (fun () -> connect c ~addr ~port) ()  >>
+  Lwt_unix.handle_unix_error (fun () -> connect c saddr) ()  >>
   Lwt_list.iter_s (fun op ->
       match_lwt execute c op with
       | `OK s -> Lwt_io.printf "+OK %s\n" s
@@ -102,15 +102,16 @@ let () =
       | [|_; addr; port;|] ->
         let addr = Unix.inet_addr_of_string addr in
         let port = int_of_string port + 1 in
+        let saddr = Unix.ADDR_INET (addr, port) in
           Lwt_main.run
             (
               if !tls then
                 lwt () = Tls_lwt.rng_init () in
                 let client_config = Tls.Config.client () in
                 let conn_wrapper = Oraft_lwt_tls.make_client_wrapper ~client_config () in
-                client_ops ~conn_wrapper ~addr ~port !anon_args
+                client_ops ~conn_wrapper saddr !anon_args
               else
-                client_ops ~addr ~port !anon_args
+                client_ops saddr !anon_args
             )
       | _ -> usage ()
     )
