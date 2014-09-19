@@ -14,37 +14,44 @@ struct
   let string_of_op op = op
   let op_of_string str = str
 
-  let port_of_string_raw s off =
-    let p = EndianString.BigEndian.get_int16 s off in
+  let port_of_bytes s off =
+    let p = EndianBytes.BigEndian.get_int16 s off in
     if p < 0 then p + 65535 else p
 
   let bytes_of_sockaddr = function
     | Unix.ADDR_UNIX s -> s
     | Unix.ADDR_INET (h, p) ->
-      let port = "\000\000" in
-      EndianString.BigEndian.set_int16 port 0 p;
-      (match Ipaddr_unix.of_inet_addr h with
-       | Ipaddr.V4 v4addr ->
-         "\004" ^ port ^ Ipaddr.V4.to_bytes v4addr
-       | Ipaddr.V6 v6addr ->
-         "\006" ^ port ^ Ipaddr.V6.to_bytes v6addr
-      )
+        match Ipaddr_unix.of_inet_addr h with
+        | Ipaddr.V4 v4addr ->
+            let buf = Bytes.create (3+4) in
+            Bytes.set buf 0 '\004';
+            EndianBytes.BigEndian.set_int16 buf 1 p;
+            Ipaddr.V4.to_bytes_raw v4addr buf 3;
+            Bytes.to_string buf
+        | Ipaddr.V6 v6addr ->
+            let buf = Bytes.create (3+4) in
+            Bytes.set buf 0 '\004';
+            EndianBytes.BigEndian.set_int16 buf 1 p;
+            Ipaddr.V6.to_bytes_raw v6addr buf 3;
+            Bytes.to_string buf
 
-  let sockaddr_of_bytes str =
-    if String.length str < 7
-    then Unix.ADDR_UNIX str (* minimum size of IPv4 packing *)
+  let sockaddr_of_bytes buf off len =
+    if len < 7
+    then Unix.ADDR_UNIX Bytes.(sub buf off len |> to_string)
+    (* minimum size of IPv4 packing *)
     else
-      let p = port_of_string_raw str 1 in
-      match str.[0] with
+      let p = port_of_bytes buf (off+1) in
+      match Bytes.get buf 0 with
       | '\004' ->
-        let a = Ipaddr.V4.of_bytes_raw str 3 |> Ipaddr_unix.V4.to_inet_addr in
+        let a = Ipaddr.V4.of_bytes_raw buf (off+3) |> Ipaddr_unix.V4.to_inet_addr in
         Unix.ADDR_INET (a, p)
       | '\006' ->
-        let a = Ipaddr.V6.of_bytes_raw str 3 |> Ipaddr_unix.V6.to_inet_addr in
+        let a = Ipaddr.V6.of_bytes_raw buf (off+3) |> Ipaddr_unix.V6.to_inet_addr in
         Unix.ADDR_INET (a, p)
       | _ ->
-        Lwt_log.ign_warning_f ~section "Using UNIX socket %s" str;
-        Unix.ADDR_UNIX str
+          let str = Bytes.(sub buf off len |> to_string) in
+          Lwt_log.ign_warning_f ~section "Using UNIX socket %s" str;
+          Unix.ADDR_UNIX str
 
   let make_addr_unix u1 u2 =
     let open Unix in
@@ -76,50 +83,56 @@ struct
     | _ -> failwith "make_addr_inet_gai"
 
   let node_sockaddr s =
-    let first_len = Char.code s.[0] in
-    String.sub s 1 first_len |> sockaddr_of_bytes
+    let first_len = Bytes.get s 0 |> Char.code in
+    sockaddr_of_bytes s 1 first_len
 
   let app_sockaddr s =
-    let len = String.length s in
-    let first_len = Char.code s.[0] in
-    String.sub s (1+first_len) (len - first_len - 1) |> sockaddr_of_bytes
+    let len = Bytes.length s in
+    let first_len = Bytes.get s 0 |> Char.code in
+    sockaddr_of_bytes s (1+first_len) (len - first_len - 1)
 
   let string_of_address addr =
-    let a1_len = Char.code addr.[0] in
-    let a1 = String.sub addr 1 a1_len in
-    let a2 = String.sub addr (1 + a1_len) (String.length addr - a1_len - 1) in
+    let a1_len = Char.code @@ Bytes.get addr 0 in
+    let a1 = Bytes.sub addr 1 a1_len in
+    let a2 = Bytes.sub addr (1 + a1_len) (Bytes.length addr - a1_len - 1) in
 
-    match a1.[0] with
+    match Bytes.get a1 0 with
     | '\004' ->
       let ipaddr = Ipaddr.V4.(of_bytes_raw a1 3 |> to_string) in
-      let node_port = port_of_string_raw a1 1 in
-      let app_port = port_of_string_raw a2 1 in
+      let node_port = port_of_bytes a1 1 in
+      let app_port = port_of_bytes a2 1 in
       Printf.sprintf "%s/%d/%d" ipaddr node_port app_port
     | '\006' ->
       let ipaddr = Ipaddr.V6.(of_bytes_raw a1 3 |> to_string) in
-      let node_port = port_of_string_raw a1 1 in
-      let app_port = port_of_string_raw a2 1 in
+      let node_port = port_of_bytes a1 1 in
+      let app_port = port_of_bytes a2 1 in
       Printf.sprintf "%s/%d/%d" ipaddr node_port app_port
-    | _ -> Printf.sprintf "%s/%s" a1 a2
+    | _ ->
+        let a1 = Bytes.to_string a1 in
+        let a2 = Bytes.to_string a2 in
+        Printf.sprintf "%s/%s" a1 a2
 
   let saddrs_of_address addr =
     let open Unix in
-    let a1_len = Char.code addr.[0] in
-    let a1 = String.sub addr 1 a1_len in
-    let a2 = String.sub addr (1 + a1_len) (String.length addr - a1_len - 1) in
+    let a1_len = Char.code @@ Bytes.get addr 0 in
+    let a1 = Bytes.sub addr 1 a1_len in
+    let a2 = Bytes.sub addr (1 + a1_len) (Bytes.length addr - a1_len - 1) in
 
-    match a1.[0] with
+    match Bytes.get a1 0 with
     | '\004' ->
       let ipaddr = Ipaddr.V4.(of_bytes_raw a1 3 |> Ipaddr_unix.V4.to_inet_addr) in
-      let node_port = port_of_string_raw a1 1 in
-      let app_port = port_of_string_raw a2 1 in
+      let node_port = port_of_bytes a1 1 in
+      let app_port = port_of_bytes a2 1 in
       ADDR_INET (ipaddr, node_port), ADDR_INET (ipaddr, app_port)
     | '\006' ->
       let ipaddr = Ipaddr.V6.(of_bytes_raw a1 3 |> Ipaddr_unix.V6.to_inet_addr) in
-      let node_port = port_of_string_raw a1 1 in
-      let app_port = port_of_string_raw a2 1 in
+      let node_port = port_of_bytes a1 1 in
+      let app_port = port_of_bytes a2 1 in
       ADDR_INET (ipaddr, node_port), ADDR_INET (ipaddr, app_port)
-    | _ -> ADDR_UNIX a1, ADDR_UNIX a2
+    | _ ->
+        let a1 = Bytes.to_string a1 in
+        let a2 = Bytes.to_string a2 in
+        ADDR_UNIX a1, ADDR_UNIX a2
 end
 
 module Client = struct
@@ -176,11 +189,11 @@ let distribute
     let node_saddr = Helpers.(saddr_with_port h.tcp_in_saddr node_port) in
     let oraft_addr = Conf.address_of_saddrs node_saddr client_saddr in
     let oraft_addr_len = String.length oraft_addr in
-    let buf = String.make 1 '\000' ^ oraft_addr in
+    let buf = Bytes.make 1 '\000' ^ oraft_addr in
     (match h.Llnet.user_data with
      | None -> Lwt.fail (Failure "return_oraft_addr")
      | Some { initialized } when initialized ->
-       buf.[0] <- '\001'; Lwt.return_unit
+       Bytes.set buf 0 '\001'; Lwt.return_unit
      | _ -> Lwt.return_unit
     ) >>= fun () ->
     Lwt_unix.send fd buf 0 (1+oraft_addr_len) [] >>= fun nb_sent ->
