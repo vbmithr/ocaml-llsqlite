@@ -10,4 +10,4 @@ license: "ISC"
 build: [
   [make]
 ]
-depends: ["ocamlfind" {build} "lwt" "oraft" "sqlite3-ocaml" "ipaddr" "re" "batteries"]
+depends: ["ocamlfind" {build} "lwt" "llnet" "oraft" "sqlite3-ocaml" "ipaddr" "re" "batteries"]
